@@ -3,6 +3,7 @@ name = "gguf-tensor-overrider-py"
 version = "0.1.0"
 description = "GGUF tensor override generator for llama.cpp and ik_llama.cpp"
 readme = "README.md"
+license = "GPL-3.0-only"
 authors = [
     { name = "Maurice-Pascal Sonnemann", email = "mpsonnemann@gmail.com" }
 ]
