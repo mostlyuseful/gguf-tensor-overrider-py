@@ -24,7 +24,7 @@ uvx --from=https://github.com/mostlyuseful/gguf-tensor-overrider-py.git --gguf U
 - `--context <number>`: Context size for the model (default: 2048).
 - `-ctk <type>`: KV cache K data type (default: f16).
 - `-ctv <type>`: KV cache V data type (default: f16).
-- `--gpu-percentage <index=percentage,...|percentage>`: Comma-separated list of GPU indices with their respective percentages of VRAM to use for tensor overrides. If a single percentage is provided, it applies to all GPUs not overridden by index.
+- `--gpu-percentage <index=percentage,...|percentage>`: Comma-separated list of GPU indices with their respective percentages of VRAM to use for tensor overrides. If a single percentage is provided, it applies to all GPUs not overridden by index. Defaults to 90% if not specified (corresponds to `--gpu-percentage 90`).
 - `--help`: Show help message and exit.
 - `--version`: Show version information and exit.
 - `--verbose`: Enable verbose output for debugging purposes.
