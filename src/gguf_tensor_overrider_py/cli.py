@@ -48,7 +48,7 @@ def validate_gpu_percentage(value: str) -> str:
 
 
 @app.command()
-def main(
+def override(
     gguf: Annotated[
         str,
         typer.Argument(help="URL or file path to the GGUF model")
