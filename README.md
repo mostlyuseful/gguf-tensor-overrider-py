@@ -10,10 +10,10 @@ The goal of this project is to provide a simple way to generate llama.cpp / ik_l
 
 ```shell
 # This will generate tensor-override flags using your actually installed GPUs
-uvx --from=https://github.com/mostlyuseful/gguf-tensor-overrider-py.git --gguf URL/file path to gguf model --use-system-gpus --context 2048 -ctk q8_0 -ctv q5_1 --gpu-percentage 0=20,1=80,90
+uvx https://github.com/mostlyuseful/gguf-tensor-overrider-py.git override --gguf URL/file path to gguf model --use-system-gpus --context 2048 -ctk q8_0 -ctv q5_1 --gpu-percentage 0=20,1=80,90
 
 # This will generate tensor-override flags using 2 hypothetical GPUs with 6GB and 10GB of VRAM
-uvx --from=https://github.com/mostlyuseful/gguf-tensor-overrider-py.git --gguf URL/file path to gguf model --context 2048 -ctk q8_0 -ctv q5_1 --gpu-vram 0=6,1=10 --gpu-percentage 90
+uvx https://github.com/mostlyuseful/gguf-tensor-overrider-py.git override --gguf URL/file path to gguf model --context 2048 -ctk q8_0 -ctv q5_1 --gpu-vram 0=6,1=10 --gpu-percentage 90
 ```
 
 ## Options
