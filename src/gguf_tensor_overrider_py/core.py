@@ -82,10 +82,10 @@ class MetadataExtractor:
         """Extract and validate architecture from metadata."""
         arch = metadata.get('general.architecture', '').lower()
         
-        # Check for prefix matches
+        # Check for prefix matches but return the full architecture name
         for supported in self.supported_architectures:
             if arch.startswith(supported):
-                return supported
+                return arch
         
         raise ValueError(f"Unsupported architecture: {arch}. "
                         f"Supported: {', '.join(self.supported_architectures)}")
@@ -394,6 +394,99 @@ class GenericOutputFormatter:
         return "\n".join(lines)
 
 
+class LlamaCppOutputFormatter:
+    """Output formatter for llama.cpp tensor override flags."""
+    
+    def format_allocation(self, result: AllocationResult) -> str:
+        """Format allocation result as llama.cpp -ot flags."""
+        lines = []
+        
+        # Generate tensor override flags
+        if result.tensor_gpu_mapping:
+            lines.append("# llama.cpp Tensor Override Flags")
+            
+            # Group tensors by GPU for efficient override generation
+            gpu_tensors = {}
+            for tensor_name, gpu_id in result.tensor_gpu_mapping.items():
+                if gpu_id not in gpu_tensors:
+                    gpu_tensors[gpu_id] = []
+                gpu_tensors[gpu_id].append(tensor_name)
+            
+            # Generate override flags for each GPU
+            override_flags = []
+            for gpu_id in sorted(gpu_tensors.keys()):
+                device_name = f"CUDA{gpu_id}" if gpu_id >= 0 else "CPU"
+                tensor_names = gpu_tensors[gpu_id]
+                
+                # Try to create efficient regex patterns for groups of similar tensors
+                patterns = self._generate_tensor_patterns(tensor_names)
+                
+                for pattern in patterns:
+                    # Use pattern directly (already escaped by _generate_tensor_patterns)
+                    override_flags.append(f'-ot "{pattern}={device_name}"')
+            
+            # Add flags to output
+            for flag in override_flags:
+                lines.append(flag)
+            
+            lines.append("")
+        
+        # Add summary information as comments
+        summary = result.allocation_summary
+        lines.append("# Allocation Summary")
+        lines.append(f"# Total tensors: {summary['total_tensors']}")
+        lines.append(f"# Unallocated: {summary['unallocated_tensors']}")
+        
+        for gpu_id, gpu_info in summary['gpu_utilization'].items():
+            vram_gb = gpu_info['allocated_bytes'] / (1024**3)
+            kv_gb = gpu_info['kv_cache_bytes'] / (1024**3)
+            util_pct = gpu_info['utilization_percent']
+            tensor_count = gpu_info['tensor_count']
+            
+            lines.append(f"# GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.1f}GB KV cache "
+                        f"= {util_pct:.1f}% ({tensor_count} tensors)")
+            
+            if gpu_info['allocated_blocks']:
+                blocks_str = ", ".join(map(str, gpu_info['allocated_blocks']))
+                lines.append(f"#   Blocks: {blocks_str}")
+        
+        # Add warnings as comments
+        if summary['warnings']:
+            lines.append("#")
+            lines.append("# Warnings:")
+            for warning in summary['warnings']:
+                lines.append(f"# ⚠️  {warning}")
+        
+        return "\n".join(lines)
+    
+    def _generate_tensor_patterns(self, tensor_names: List[str]) -> List[str]:
+        """Generate efficient regex patterns for tensor names."""
+        if not tensor_names:
+            return []
+        
+        # For now, use individual tensor patterns
+        # Future optimization: group similar patterns
+        patterns = []
+        
+        for tensor_name in sorted(tensor_names):
+            # Escape special regex characters and create exact match pattern
+            escaped_name = self._escape_tensor_name(tensor_name)
+            patterns.append(f"^{escaped_name}$")
+        
+        return patterns
+    
+    def _escape_tensor_name(self, tensor_name: str) -> str:
+        """Escape special regex characters in tensor names."""
+        # Escape special regex characters that might appear in tensor names
+        special_chars = r'\.^$*+?{}[]|()'
+        escaped = tensor_name
+        
+        for char in special_chars:
+            escaped = escaped.replace(char, f"\\{char}")
+        
+        return escaped
+
+
 # ============================================================================
 # Main Application Service
 # ============================================================================
@@ -414,13 +507,20 @@ class AllocationRequest:
 class GGUFTensorOverrider:
     """Main application service orchestrating the allocation process."""
     
-    def __init__(self):
-        self.metadata_extractor = MetadataExtractor()
-        self.tensor_processor = TensorProcessor()
-        self.gpu_manager = GPUManager()
-        self.allocator = TensorAllocator()
-        self.output_formatter = GenericOutputFormatter()
-    
+    def __init__(
+        self,
+        metadata_extractor: Optional[MetadataExtractor] = None,
+        tensor_processor: Optional[TensorProcessor] = None,
+        gpu_manager: Optional[GPUManager] = None,
+        allocator: Optional[TensorAllocator] = None,
+        output_formatter: Optional[OutputFormatterProtocol] = None,
+    ):
+        self.metadata_extractor = metadata_extractor or MetadataExtractor()
+        self.tensor_processor = tensor_processor or TensorProcessor()
+        self.gpu_manager = gpu_manager or GPUManager()
+        self.allocator = allocator or TensorAllocator()
+        self.output_formatter = output_formatter or LlamaCppOutputFormatter()
+        
     def process_allocation_request(self, request: AllocationRequest) -> str:
         """Process complete allocation request and return formatted output."""
         try:

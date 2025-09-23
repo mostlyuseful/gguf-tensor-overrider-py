@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from gguf_tensor_overrider_py.core import AllocationRequest, GGUFTensorOverrider
+from gguf_tensor_overrider_py.core import AllocationRequest, GGUFTensorOverrider, GenericOutputFormatter
 from gguf_tensor_overrider_py.models import DataType
 from huggingface_hub import hf_hub_download
 
@@ -29,7 +29,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_single_gpu_10gb_success(self, test_model_path):
         """Test placement on single GPU with 10GB VRAM - should succeed."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -60,7 +60,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_single_gpu_0_1gb_partial(self, test_model_path):
         """Test placement on single GPU with 0.1GB VRAM - should have partial placement."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -94,7 +94,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_two_gpus_10gb_first_gpu_only(self, test_model_path):
         """Test placement on two 10GB GPUs - should use only first GPU."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -133,7 +133,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_two_gpus_0_1gb_partial(self, test_model_path):
         """Test placement on two 0.1GB GPUs - should have partial placement on both."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -166,7 +166,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_two_gpus_0_4gb_distributed(self, test_model_path):
         """Test placement on two 0.4GB GPUs - should distribute across both."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -215,7 +215,7 @@ class TestRealGGUFIntegration:
     ])
     def test_kv_cache_quantization_effects(self, test_model_path, k_dtype, v_dtype):
         """Test different KV cache quantization settings."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -255,7 +255,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_different_context_sizes(self, test_model_path):
         """Test how context size affects allocation."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         results = {}
         
@@ -288,7 +288,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_block_colocations(self, test_model_path):
         """Test that blocks are kept together on same GPU."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -329,7 +329,7 @@ class TestRealGGUFIntegration:
     @pytest.mark.slow
     def test_allocation_deterministic(self, test_model_path):
         """Test that allocation is deterministic across runs."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path=test_model_path,
@@ -364,7 +364,7 @@ class TestErrorHandling:
     
     def test_invalid_gguf_file(self):
         """Test handling of invalid GGUF file."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         # Create a fake file
         with tempfile.NamedTemporaryFile(suffix=".gguf", delete=False) as f:
@@ -390,7 +390,7 @@ class TestErrorHandling:
     
     def test_nonexistent_file(self):
         """Test handling of nonexistent GGUF file."""
-        overrider = GGUFTensorOverrider()
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
         
         request = AllocationRequest(
             gguf_path="/nonexistent/path/model.gguf",
