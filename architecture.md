@@ -40,9 +40,10 @@ We have successfully designed and implemented a comprehensive class hierarchy fo
 - Reserves KV cache proportionally across GPUs
 - Handles spillover and overflow scenarios gracefully
 
-#### **GenericOutputFormatter**
-- Produces generic tensor→GPU mapping with utilization summaries
-- Extensible design for future runtime-specific formatters
+#### **GenericOutputFormatter & LlamaCppOutputFormatter**
+- **GenericOutputFormatter**: Produces generic tensor→GPU mapping with utilization summaries
+- **LlamaCppOutputFormatter**: Default formatter producing llama.cpp-specific `-ot` flags
+- **Extensible design** for future runtime-specific formatters
 
 #### **GGUFTensorOverrider**
 - Main orchestrator service coordinating all components
@@ -87,9 +88,9 @@ We have successfully designed and implemented a comprehensive class hierarchy fo
 - **Graceful degradation** when optional features unavailable
 
 ### ✅ **Testing Coverage**
-- **61 unit tests** covering all major functionality
+- **Comprehensive unit tests** covering all major functionality
 - **Edge case validation** including overflow, invalid inputs, missing data
-- **Mock-based testing** for external dependencies (NVML, file system)
+- **Mock-based testing** for external dependencies (NVIDIA GPU libraries, file system)
 - **Property-based validation** ensuring data consistency
 
 ## Implementation Highlights

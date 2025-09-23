@@ -54,7 +54,7 @@ Tensors are classified and allocated in the following priority order:
 
 ### Architecture Detection
 - Read `general.architecture` field from GGUF metadata (convert to lowercase)
-- Support architectures with prefix matching: `[llama, qwen, qwen2, qwen2_moe, qwen3, qwen3moe]`
+- Support architectures with prefix matching: `[llama, qwen, qwen2, qwen2_moe, qwen3, qwen3moe, gemma3]`
 - Unknown architectures should trigger a warning but allow fallback behavior
 
 ### Metadata Key Mapping (Tolerant Approach)
@@ -98,7 +98,8 @@ kv_bytes_per_layer = context_length × n_kv_head × head_dim × (bytes(ctk) + by
 - `bf16`: 2 bytes  
 - `fp32`: 4 bytes
 - `q8_0`: 1 byte
-- `q5_1`: 2 bytes (fallback to fp16 - KV quantization not widely supported)
+- `q5_0`: 5.5 bytes
+- `q5_1`: 5.0 bytes
 - Unknown types: Default to 2 bytes (fp16) with warning
 
 ### Total KV Cache Reservation
@@ -196,25 +197,33 @@ kv_bytes_per_layer = context_length × n_kv_head × head_dim × (bytes(ctk) + by
 
 ## CLI Interface
 
-### Required Arguments
-- `--gguf <URL or file path>`: Path or URL to GGUF model file
+### Primary Commands
 
-### GPU Configuration (Mutually Exclusive)
+#### `override` Command
+Generate tensor override flags for llama.cpp and ik_llama.cpp.
+
+**Required Arguments**
+- `gguf`: Path or URL to GGUF model file
+
+**GPU Configuration (Mutually Exclusive)**
 - `--use-system-gpus`: Detect and use installed NVIDIA GPUs
 - `--gpu-vram <index=GB,...>`: Specify hypothetical GPU configurations
 
-### Model Parameters
+**Model Parameters**
 - `--context <number>`: Context size in tokens (default: 2048)
 - `-ctk <type>`: KV cache K data type (default: f16)
 - `-ctv <type>`: KV cache V data type (default: f16)
 
-### GPU Allocation
-- `--gpu-percentage <index=percentage,...|percentage>`: VRAM usage limits per GPU
+**GPU Allocation**
+- `--gpu-percentage <index=percentage,...|percentage>`: VRAM usage limits per GPU (default: 90)
 
-### Utility Options
+**Utility Options**
 - `--help`: Show help message and exit
 - `--version`: Show version information and exit
 - `--verbose`: Enable verbose output for debugging
+
+#### `check-gpus` Command
+Utility command to check available GPUs on the system.
 
 ### Input Validation
 - GGUF file/URL must be accessible and valid
@@ -230,14 +239,28 @@ kv_bytes_per_layer = context_length × n_kv_head × head_dim × (bytes(ctk) + by
 
 ## Output Format
 
-### Generic Tensor→GPU Mapping
-Primary output format for flexibility and tool chaining:
+### Runtime-Specific Formatters
+
+#### LlamaCppOutputFormatter (Default)
+Primary output formatter for llama.cpp integration:
+```bash
+# llama.cpp Tensor Override Flags
+-ot "^blk\.0\.attn_k\.weight$=CUDA0"
+-ot "^blk\.0\.attn_v\.weight$=CUDA0"
+-ot "^blk\.1\.attn_k\.weight$=CUDA1"
+
+# Allocation Summary
+# GPU 0: 3.2GB tensors + 1.8GB KV cache = 83% (147 tensors)
+```
+
+#### GenericOutputFormatter (Alternative)
+Generic tensor→GPU mapping for flexibility and tool chaining:
 ```
 tensor_name_1:gpu_0 tensor_name_2:gpu_0 tensor_name_3:gpu_1 ...
 ```
 
 ### Allocation Summary
-Provide comprehensive summary including:
+Both formatters provide comprehensive summary including:
 - Total tensors processed and allocated
 - VRAM usage per GPU (allocated + reserved for KV cache)
 - KV cache reservation per GPU
@@ -302,10 +325,10 @@ When `--verbose` is enabled, include:
 - Implement as optional mode with clear performance trade-off warnings
 - Maintain priority ordering within split blocks
 
-### Runtime-Specific Formatters (Later)
-- **llama.cpp formatter**: Generate `--tensor-split` + `--override-kv-device` flags
+### Additional Runtime-Specific Formatters (Future)
 - **ik_llama.cpp formatter**: Generate appropriate flags for ik_llama.cpp syntax
 - **Generic JSON**: Machine-readable allocation data for tool integration
+- **Improved pattern optimization**: More efficient regex patterns for tensor groups
 
 ### Advanced Features (Future)
 - Multi-node allocation for distributed inference
@@ -318,7 +341,7 @@ When `--verbose` is enabled, include:
 ### Dependencies
 - `gguf-parser>=0.1.1`: GGUF file parsing
 - `typer>=0.19.1`: CLI framework
-- `pynvml` (optional): NVIDIA GPU detection
+- `nvidia-ml-py>=13.580.82`: NVIDIA GPU detection
 - Standard library: `re`, `json`, `pathlib`, etc.
 
 ### Performance Considerations
