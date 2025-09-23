@@ -23,10 +23,11 @@ class DataType(Enum):
     BF16 = "bf16"
     F32 = "f32"
     Q8_0 = "q8_0"
+    Q5_0 = "q5_0"
     Q5_1 = "q5_1"
     
     @property
-    def bytes_per_element(self) -> int:
+    def bytes_per_element(self) -> float:
         """Return bytes per element for this data type."""
         match self:
             case DataType.F16 | DataType.BF16:
@@ -35,11 +36,12 @@ class DataType(Enum):
                 return 4
             case DataType.Q8_0:
                 return 1
+            case DataType.Q5_0:
+                return 5.5
             case DataType.Q5_1:
-                # KV quantization not widely supported, fall back to fp16
-                return 2
+                return 5.0
             case _:
-                return 2  # Default to fp16
+                raise ValueError(f"Unknown data type: {self.value}")
 
 
 @dataclass

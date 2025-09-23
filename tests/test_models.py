@@ -17,7 +17,9 @@ class TestDataType:
         assert DataType.BF16.bytes_per_element == 2
         assert DataType.F32.bytes_per_element == 4
         assert DataType.Q8_0.bytes_per_element == 1
-        assert DataType.Q5_1.bytes_per_element == 2  # Falls back to fp16
+        assert DataType.Q5_0.bytes_per_element == 5.5
+        assert DataType.Q5_1.bytes_per_element == 5.0
+
     
     def test_string_values(self):
         """Test string representation of data types."""

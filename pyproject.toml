@@ -38,5 +38,8 @@ markers = [
 
 [dependency-groups]
 dev = [
+    "huggingface-hub>=0.35.0",
+    "ipdb>=0.13.13",
     "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
 ]

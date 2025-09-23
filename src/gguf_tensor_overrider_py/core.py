@@ -44,7 +44,7 @@ class MetadataExtractor:
     
     def __init__(self):
         self.supported_architectures = {
-            'llama', 'qwen', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3moe'
+            'llama', 'qwen', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3moe', 'gemma3'
         }
     
     def extract_metadata(self, gguf_parser: GGUFParser) -> ModelMetadata:
@@ -490,4 +490,6 @@ class GGUFTensorOverrider:
         if not file_path.exists():
             raise FileNotFoundError(f"GGUF file not found: {file_path}")
         
-        return GGUFParser(str(file_path))
+        parser = GGUFParser(str(file_path))
+        parser.parse()
+        return parser
