@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Union
 from urllib.parse import urlparse
@@ -132,9 +133,14 @@ class TensorProcessor:
     def _calculate_tensor_size(self, tensor_data: Dict[str, Any], all_tensors: List[Dict[str, Any]]) -> int:
         """Calculate tensor size using offset differences."""
         current_offset = tensor_data['offset']
+        # Respect part boundaries when present (for split GGUFs)
+        current_part = tensor_data.get('part_id')
         
-        # Find next tensor with higher offset
-        higher_offsets = [t['offset'] for t in all_tensors if t['offset'] > current_offset]
+        # Find next tensor with higher offset within the same part (if part_id present)
+        higher_offsets = [
+            t['offset'] for t in all_tensors
+            if t['offset'] > current_offset and (('part_id' not in t and current_part is None) or t.get('part_id') == current_part)
+        ]
         
         if higher_offsets:
             next_offset = min(higher_offsets)
@@ -226,7 +232,7 @@ class GPUManager:
         for i in range(device_count):
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
             mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            vram_gb = mem_info.total / (1024**3)
+            vram_gb = float(mem_info.total) / (1024**3)
             
             percentage = percentage_overrides.get(i, percentage_overrides.get('default', 90.0))
             gpus.append(GPUConfiguration(i, vram_gb, percentage))
@@ -530,6 +536,40 @@ class GGUFTensorOverrider:
                 print(f"Loading GGUF file: {request.gguf_path}")
             
             gguf_parser = self._load_gguf_file(request.gguf_path)
+
+            # If this GGUF is split into multiple parts, parse and merge tensors from all parts
+            try:
+                split_count = int(gguf_parser.metadata.get('split.count', 1)) if gguf_parser.metadata else 1
+            except Exception:
+                split_count = 1
+            if split_count > 1:
+                if request.verbose:
+                    print(f"Detected split GGUF with split.count={split_count}. Discovering and parsing all parts...")
+                part_paths = self._discover_split_parts(str(request.gguf_path), split_count)
+                if request.verbose:
+                    print(f"Found {len(part_paths)} parts")
+                combined_tensors: List[Dict[str, Any]] = []
+                seen_names: set[str] = set()
+                for idx, part_path in enumerate(part_paths):
+                    if request.verbose:
+                        print(f"Parsing part {idx+1}/{len(part_paths)}: {part_path}")
+                    part_parser = HttpGGUFParser(part_path)
+                    part_parser.parse()
+                    # Optional: verify consistent split.count
+                    # Merge tensors, tagging with part_id for size calculation segregation
+                    if part_parser.tensors_info:
+                        for t in part_parser.tensors_info:
+                            # Copy to avoid mutating original structures
+                            td = dict(t)
+                            td['part_id'] = idx
+                            name = td.get('name')
+                            if isinstance(name, str) and name not in seen_names:
+                                combined_tensors.append(td)
+                                seen_names.add(name)
+                if not combined_tensors:
+                    raise RuntimeError("Split GGUF detected but no tensors were parsed from parts")
+                # Replace tensors_info on primary parser with the aggregated list
+                gguf_parser.tensors_info = combined_tensors
             
             # Extract metadata
             if request.verbose:
@@ -583,3 +623,66 @@ class GGUFTensorOverrider:
         parser = HttpGGUFParser(path_str)
         parser.parse()
         return parser
+
+    def _discover_split_parts(self, gguf_path: Union[str, Path], split_count: int) -> List[str]:
+        """Discover all split GGUF part file paths/URLs.
+        
+        Looks for pattern '-<index>-of-<total>.gguf'. Uses the width of <index> for zero-padding.
+        For HTTP URLs, this pattern must be present to construct sibling URLs. For local files,
+        if pattern is missing, attempts to scan the directory for matching files with same prefix.
+        """
+        path_str = str(gguf_path)
+        is_http = urlparse(path_str).scheme in ('http', 'https')
+
+        # Regex to find the split suffix
+        m = re.search(r"-(\d+)-of-(\d+)\.gguf$", path_str)
+        if m:
+            idx_str, total_str = m.group(1), m.group(2)
+            width = len(idx_str)
+            # Use split_count from metadata when provided, otherwise fall back to parsed total
+            total = split_count if split_count is not None else int(total_str)
+            base = path_str[: m.start(1) - 1]  # up to the hyphen before index
+            # base currently ends before '-<idx>'? Let's reconstruct carefully:
+            # Split path into prefix + pattern
+            prefix = path_str[: m.start()]  # before '-<idx>-of-<total>.gguf'
+            suffix_after = path_str[m.end():]  # should be empty
+            parts = []
+            for i in range(1, int(total) + 1):
+                new_idx = str(i).zfill(width)
+                part = f"{prefix}-{new_idx}-of-{str(total).zfill(len(total_str))}.gguf{suffix_after}"
+                parts.append(part)
+            return parts
+
+        # If no pattern in name
+        if is_http:
+            raise RuntimeError("split.count > 1 but URL does not contain '-<idx>-of-<total>.gguf' pattern to discover other parts")
+        
+        # Local file: try to scan directory
+        p = Path(path_str)
+        if not p.exists():
+            raise RuntimeError(f"GGUF file not found: {p}")
+        dir_path = p.parent
+        # Attempt to derive the model prefix (filename without split suffix if it existed)
+        stem = p.name
+        # Collect files that match the split pattern and share the longest common prefix with this file name
+        candidates = sorted([f for f in dir_path.iterdir() if f.is_file() and re.search(r"-(\d+)-of-(\d+)\.gguf$", f.name)])
+        if not candidates:
+            raise RuntimeError("split.count > 1 but could not find any sibling files matching '-<idx>-of-<total>.gguf'")
+        # Try to filter candidates with same leading prefix segment before the split suffix
+        def split_prefix(name: str) -> str:
+            mm = re.search(r"-(\d+)-of-(\d+)\.gguf$", name)
+            return name[: mm.start()] if mm else name
+        this_prefix = split_prefix(stem)
+        filtered = [str(f) for f in candidates if split_prefix(f.name) == this_prefix]
+        if not filtered:
+            # Fallback to all candidates; best effort
+            filtered = [str(f) for f in candidates]
+        # Ensure we have exactly split_count entries if possible
+        if len(filtered) >= split_count:
+            # Sort by index
+            def idx_of(name: str) -> int:
+                mm = re.search(r"-(\d+)-of-(\d+)\.gguf$", name)
+                return int(mm.group(1)) if mm else 0
+            filtered.sort(key=idx_of)
+            return filtered[:split_count]
+        return filtered

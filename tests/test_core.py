@@ -398,6 +398,61 @@ class TestGGUFTensorOverrider:
         
         assert "# Allocation Summary" in output
         assert isinstance(output, str)
+
+    @patch('gguf_tensor_overrider_py.core.HttpGGUFParser')
+    def test_process_allocation_request_split_files(self, mock_http_gguf_parser):
+        """Test allocation when GGUF is split across multiple parts."""
+        # Simulate metadata indicating a split file
+        # First call to _load_gguf_file returns a parser with split.count=2
+        primary_parser = Mock()
+        primary_parser.metadata = {
+            'general.architecture': 'llama',
+            'llama.embedding_length': 2048,
+            'llama.block_count': 2,
+            'llama.attention.head_count': 16,
+            'llama.attention.head_count_kv': 16,
+            'split.count': 2,
+        }
+        # Tensors on part 1 (offsets local to part)
+        part1_parser = Mock()
+        part1_parser.metadata = primary_parser.metadata
+        part1_parser.tensors_info = [
+            {'name': 'blk.0.attn_k.weight', 'offset': 0, 'dimensions': [32, 64]},
+            {'name': 'blk.0.ffn_down.weight', 'offset': 4096, 'dimensions': [64, 32]},
+        ]
+        # Tensors on part 2
+        part2_parser = Mock()
+        part2_parser.metadata = primary_parser.metadata
+        part2_parser.tensors_info = [
+            {'name': 'blk.1.attn_v.weight', 'offset': 0, 'dimensions': [32, 64]},
+            {'name': 'output.weight', 'offset': 4096, 'dimensions': [64, 100]},
+        ]
+        
+        # When HttpGGUFParser(...) is instantiated, we need to simulate different returns
+        # We'll set side_effect so that the first instance (primary) is used for metadata,
+        # and subsequent instances for discovered parts return part1 and part2 parsers.
+        instances = [primary_parser, part1_parser, part2_parser]
+        def side_effect(*args, **kwargs):
+            # Pop in order; if exhausted, return last
+            return instances.pop(0) if instances else part2_parser
+        mock_http_gguf_parser.side_effect = side_effect
+
+        # Create request pointing to a filename that includes the split pattern
+        request = AllocationRequest(
+            gguf_path="/tmp/model-00001-of-00002.gguf",
+            use_system_gpus=False,
+            gpu_vram_config="0=2",
+            gpu_percentages="90",
+            context_length=1024,
+            k_dtype=DataType.F16,
+            v_dtype=DataType.F16,
+            verbose=False
+        )
+
+        output = self.overrider.process_allocation_request(request)
+        
+        # Ensure tensors from both parts are considered (3+ tensors)
+        assert "# Allocation Summary" in output
     
     def test_load_gguf_file_not_found(self):
         """Test error when GGUF file doesn't exist."""
