@@ -405,6 +405,31 @@ class TestErrorHandling:
         
         with pytest.raises(RuntimeError, match="Allocation failed"):
             overrider.process_allocation_request(request)
+    
+    def test_http_integration(self):
+        """Test allocation with a GGUF file over HTTP."""
+        overrider = GGUFTensorOverrider(output_formatter=GenericOutputFormatter())
+        
+        # Use a known GGUF file URL from Hugging Face
+        gguf_url = "https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-UD-IQ1_S.gguf"
+        
+        request = AllocationRequest(
+            gguf_path=gguf_url,
+            use_system_gpus=False,
+            gpu_vram_config="0=10",
+            gpu_percentages="90",
+            context_length=2048,
+            k_dtype=DataType.F16,
+            v_dtype=DataType.F16,
+            verbose=False
+        )
+        
+        output = overrider.process_allocation_request(request)
+        
+        # Verify successful allocation
+        assert "# Allocation Summary" in output
+        assert "GPU 0:" in output
+        assert "Unallocated: 0" in output  # Should fit all tensors
 
 
 # Helper function to run integration tests manually

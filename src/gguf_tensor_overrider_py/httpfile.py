@@ -288,8 +288,10 @@ class HttpFile:
             )
             data.extend(relevant_data)
             current_offset_bytes += len(relevant_data)
+
+        # update offset
+        self.offset = end_offset_bytes
         
-        logging.debug(f"HttpFile.read: Returning {len(data)} bytes from offset={self.offset}")
         return data
 
     def seek(self, offset: int, whence: int = io.SEEK_SET) -> None:

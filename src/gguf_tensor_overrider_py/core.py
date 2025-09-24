@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Protocol, Union
 from urllib.parse import urlparse
 
 from gguf_parser import GGUFParser
+from .httpggufparser import HttpGGUFParser
 
 from .models import (
     AllocationResult, ArchitectureKeys, BlockGroup, DataType,
@@ -578,18 +579,7 @@ class GGUFTensorOverrider:
         """Load GGUF file from local path or URL."""
         path_str = str(gguf_path)
         
-        # Check if it's a URL
-        parsed = urlparse(path_str)
-        if parsed.scheme in ('http', 'https'):
-            # For URLs, we'd need to download first or stream
-            # For now, raise an error since gguf-parser may not support URLs directly
-            raise NotImplementedError("URL loading not yet implemented. Use local file path.")
-        
-        # Local file path
-        file_path = Path(path_str)
-        if not file_path.exists():
-            raise FileNotFoundError(f"GGUF file not found: {file_path}")
-        
-        parser = GGUFParser(str(file_path))
+        # Use HttpGGUFParser which supports both URLs and local files
+        parser = HttpGGUFParser(path_str)
         parser.parse()
         return parser

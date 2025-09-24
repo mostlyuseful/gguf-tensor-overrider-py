@@ -367,10 +367,10 @@ class TestGGUFTensorOverrider:
         """Set up test fixtures."""
         self.overrider = GGUFTensorOverrider()
     
-    @patch('gguf_tensor_overrider_py.core.GGUFParser')
-    def test_process_allocation_request_success(self, mock_gguf_parser):
+    @patch('gguf_tensor_overrider_py.core.HttpGGUFParser')
+    def test_process_allocation_request_success(self, mock_http_gguf_parser):
         """Test successful allocation request processing."""
-        # Mock GGUF parser
+        # Mock HttpGGUFParser
         mock_parser_instance = Mock()
         mock_parser_instance.metadata = {
             'general.architecture': 'llama',
@@ -382,7 +382,7 @@ class TestGGUFTensorOverrider:
         mock_parser_instance.tensors_info = [
             {'name': 'test.weight', 'offset': 0, 'dimensions': [100, 100]}
         ]
-        mock_gguf_parser.return_value = mock_parser_instance
+        mock_http_gguf_parser.return_value = mock_parser_instance
         
         # Create test request
         request = AllocationRequest(
@@ -394,19 +394,19 @@ class TestGGUFTensorOverrider:
             v_dtype=DataType.F16
         )
         
-        # Mock file existence
-        with patch('pathlib.Path.exists', return_value=True):
-            output = self.overrider.process_allocation_request(request)
+        output = self.overrider.process_allocation_request(request)
         
         assert "# Allocation Summary" in output
         assert isinstance(output, str)
     
     def test_load_gguf_file_not_found(self):
         """Test error when GGUF file doesn't exist."""
-        with pytest.raises(FileNotFoundError):
+        from gguf_parser import GGUFParseError
+        with pytest.raises(GGUFParseError, match="GGUF file not found"):
             self.overrider._load_gguf_file("nonexistent.gguf")
     
-    def test_load_gguf_file_url_not_implemented(self):
-        """Test URL loading not implemented error."""
-        with pytest.raises(NotImplementedError, match="URL loading not yet implemented"):
+    def test_load_gguf_file_url_failure(self):
+        """Test URL loading failure when URL is not accessible."""
+        from gguf_tensor_overrider_py.httpfile import FileLengthError
+        with pytest.raises(FileLengthError, match="Failed to get file length"):
             self.overrider._load_gguf_file("https://example.com/model.gguf")
