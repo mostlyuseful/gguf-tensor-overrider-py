@@ -99,6 +99,10 @@ def override(
     ] = False,
 ) -> None:
     """Generate tensor override flags for llama.cpp and ik_llama.cpp."""
+
+    if verbose:
+        import logging
+        logging.basicConfig(level=logging.DEBUG, force=True)
     
     if version:
         typer.echo("gguf-tensor-overrider-py 0.1.0")
