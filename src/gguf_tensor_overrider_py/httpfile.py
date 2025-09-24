@@ -44,7 +44,6 @@ class InMemoryCache:
             Cached bytes data if found, None otherwise
         """
         value = self.cache.get(range, None)
-        logging.debug(f"InMemoryCache.get({range}) -> {'HIT' if value is not None else 'MISS'}")
         return value
 
     def set(self, range: tuple[int, int], data: bytes) -> None:
@@ -55,7 +54,7 @@ class InMemoryCache:
             data: Bytes data to cache
         """
         self.cache[range] = data
-        logging.debug(f"InMemoryCache.set({range}, <{len(data)} bytes>)")
+        logging.debug(f"InMemoryCache.set({range}, <{len(data)} bytes>, <{sum(len(v) for v in self.cache.values())/1024**2:.1f} MB total size>)")
 
 class HttpFile:
     """A file-like object that fetches data from a URL in blocks and caches it.
@@ -209,7 +208,6 @@ class HttpFile:
         # Check cache first
         cached_data = self.cache.get(block_range)
         if cached_data is not None:
-            logging.debug(f"HttpFile._get_block_data: Cache HIT for block_range={block_range}")
             return cached_data
         
         # Cache miss - fetch from HTTP
@@ -257,7 +255,6 @@ class HttpFile:
         Raises:
             DataFetchError: If fetching data from the remote file fails
         """
-        logging.debug(f"HttpFile.read(size={size}) called at offset={self.offset}")
         
         if size == 0:
             logging.debug("HttpFile.read: size=0, returning empty bytes")
@@ -278,9 +275,8 @@ class HttpFile:
         
         while current_offset_bytes < end_offset_bytes:
             block_range = self._calculate_block_range(current_offset_bytes)
-            block_start, block_end = block_range
+            block_start, _ = block_range
             
-            logging.debug(f"HttpFile.read: Processing block_range={block_range}")
             block_data = self._get_block_data(block_range)
             
             relevant_data = self._extract_relevant_data(
