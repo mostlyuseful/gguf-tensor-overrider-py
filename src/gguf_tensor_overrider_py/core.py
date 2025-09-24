@@ -45,7 +45,7 @@ class MetadataExtractor:
     
     def __init__(self):
         self.supported_architectures = {
-            'llama', 'qwen', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3moe', 'gemma3'
+            'llama', 'qwen', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3moe', 'gemma3', 'deepseek2'
         }
     
     def extract_metadata(self, gguf_parser: GGUFParser) -> ModelMetadata:
@@ -330,7 +330,7 @@ class TensorAllocator:
             if not allocated:
                 # Block doesn't fit on any GPU
                 result.unallocated_tensors.extend(block.tensors)
-                result.add_warning(f"Block {block.block_id} ({block.total_size_bytes} bytes) "
+                result.add_warning(f"Block {block.block_id} ({block.total_size_bytes/1024**2:.1f} MB) "
                                  f"doesn't fit on any available GPU")
         
         return result
