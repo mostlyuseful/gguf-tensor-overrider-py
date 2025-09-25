@@ -22,7 +22,7 @@ class HttpGGUFParser(GGUFParser):
         
         if is_url:
             # Use HttpFile for URLs
-            with HttpFile(str(self.file_path_or_url), block_size=10*1024**2) as f:
+            with HttpFile(str(self.file_path_or_url), block_size=5*1024**2) as f:
                 self._parse_from_file_object(f)
         else:
             # Use regular file for local paths
