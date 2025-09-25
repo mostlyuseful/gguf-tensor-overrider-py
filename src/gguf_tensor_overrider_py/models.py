@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -23,6 +24,9 @@ class DataType(Enum):
     BF16 = "bf16"
     F32 = "f32"
     Q8_0 = "q8_0"
+    Q4_0 = "q4_0"
+    Q4_1 = "q4_1"
+    IQ4_NL = "iq4_nl"
     Q5_0 = "q5_0"
     Q5_1 = "q5_1"
     
@@ -36,6 +40,14 @@ class DataType(Enum):
                 return 4
             case DataType.Q8_0:
                 return 1
+            # The following values are aligned to weight-quant style approximations.
+            # KV cache uses different packing; KV-specific mapping is handled in KVCacheConfig.
+            case DataType.Q4_0:
+                return 4.0
+            case DataType.Q4_1:
+                return 4.5
+            case DataType.IQ4_NL:
+                return 4.0
             case DataType.Q5_0:
                 return 5.5
             case DataType.Q5_1:
@@ -144,6 +156,9 @@ class ModelMetadata:
     n_heads: int
     n_kv_heads: int
     head_dim: Optional[int] = None
+    # Optional per-type head dimensions for architectures where K and V differ (e.g., MLA variants)
+    k_head_dim: Optional[int] = None
+    v_head_dim: Optional[int] = None
     
     def __post_init__(self) -> None:
         """Calculate head dimension if not provided."""
@@ -169,17 +184,39 @@ class KVCacheConfig:
         attention heads only and therefore is computed from attention-related
         dimensions (n_kv_heads and head_dim) regardless of expert_count.
         """
+        # Map DataType to KV-cache bytes per element.
+        def _kv_bytes(dt: DataType) -> float:
+            # KV cache quantization in llama.cpp supports: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1.
+            # Map to approximate bytes/element for KV tensors (ignoring small per-block scale overheads).
+            if dt in (DataType.F16, DataType.BF16):
+                return 2.0
+            if dt is DataType.F32:
+                return 4.0
+            if dt is DataType.Q8_0:
+                return 1.0
+            if dt in (DataType.Q4_0, DataType.Q4_1, DataType.IQ4_NL):
+                return 0.5
+            if dt in (DataType.Q5_0, DataType.Q5_1):
+                return 5.5/8  # 5.5 bits per value ≈ 0.6875 bytes
+            # Fallback to enum's raw bytes (shouldn't happen)
+            return float(dt.bytes_per_element)
+
+        n_kv = metadata.n_kv_heads
+        L = self.context_length
+
+        # If architectures provide distinct key/value head dims, honor them
+        if metadata.k_head_dim is not None and metadata.v_head_dim is not None:
+            total = L * n_kv * (_kv_bytes(self.k_dtype) * metadata.k_head_dim + _kv_bytes(self.v_dtype) * metadata.v_head_dim)
+            return int(math.ceil(total))
+
+        # Fallback: use a single head_dim for both K and V
         if metadata.head_dim is None:
             raise ValueError("Head dimension not available for KV cache calculation")
-        bytes_per_token = (self.k_dtype.bytes_per_element + self.v_dtype.bytes_per_element)
-        total = (
-            self.context_length
-            * metadata.n_kv_heads
-            * metadata.head_dim
-            * bytes_per_token
-        )
-        # Ensure integer bytes; round to nearest for fractional byte estimates (e.g., Q5_0)
-        return int(round(total))
+
+        bytes_per_token = (_kv_bytes(self.k_dtype) + _kv_bytes(self.v_dtype))
+        total = L * n_kv * metadata.head_dim * bytes_per_token
+        # Ensure integer bytes; ceil to avoid underestimation when sub-byte types are used
+        return int(math.ceil(total))
     
     def total_bytes(self, metadata: ModelMetadata) -> int:
         """Calculate total KV cache bytes for entire model."""
