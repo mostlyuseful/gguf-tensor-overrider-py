@@ -386,7 +386,7 @@ class GenericOutputFormatter:
             tensor_count = gpu_info['tensor_count']
             
             lines.append(
-                f"GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.2f}GB KV cache "
+                f"GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.2f}GB KV cache = {vram_gb+kv_gb:.1f}GB"
                 f"= {util_pct:.1f}% of usable, {util_total_pct:.1f}% of total ({tensor_count} tensors)"
             )
             
@@ -467,7 +467,7 @@ class LlamaCppOutputFormatter:
             tensor_count = gpu_info['tensor_count']
             
             lines.append(
-                f"# GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.2f}GB KV cache "
+                f"# GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.2f}GB KV cache = {vram_gb+kv_gb:.1f}GB"
                 f"= {util_pct:.1f}% of usable, {util_total_pct:.1f}% of total ({tensor_count} tensors)"
             )
             
