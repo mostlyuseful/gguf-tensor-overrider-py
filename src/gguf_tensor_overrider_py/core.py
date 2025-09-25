@@ -384,7 +384,7 @@ class GenericOutputFormatter:
             util_pct = gpu_info['utilization_percent']
             tensor_count = gpu_info['tensor_count']
             
-            lines.append(f"GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.1f}GB KV cache "
+            lines.append(f"GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.2f}GB KV cache "
                         f"= {util_pct:.1f}% ({tensor_count} tensors)")
             
             if gpu_info['allocated_blocks']:
@@ -462,7 +462,7 @@ class LlamaCppOutputFormatter:
             util_pct = gpu_info['utilization_percent']
             tensor_count = gpu_info['tensor_count']
             
-            lines.append(f"# GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.1f}GB KV cache "
+            lines.append(f"# GPU {gpu_id}: {vram_gb:.1f}GB tensors + {kv_gb:.2f}GB KV cache "
                         f"= {util_pct:.1f}% ({tensor_count} tensors)")
             
             if gpu_info['allocated_blocks']:
