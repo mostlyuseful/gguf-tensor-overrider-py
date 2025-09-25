@@ -428,7 +428,7 @@ class LlamaCppOutputFormatter:
             lines.append("# llama.cpp Tensor Override Flags")
             
             # Group tensors by GPU for efficient override generation
-            gpu_tensors = {}
+            gpu_tensors: Dict[int, List[str]] = {}
             for tensor_name, gpu_id in result.tensor_gpu_mapping.items():
                 if gpu_id not in gpu_tensors:
                     gpu_tensors[gpu_id] = []
@@ -438,10 +438,10 @@ class LlamaCppOutputFormatter:
             override_flags = []
             for gpu_id in sorted(gpu_tensors.keys()):
                 device_name = f"CUDA{gpu_id}" if gpu_id >= 0 else "CPU"
-                tensor_names = gpu_tensors[gpu_id]
+                tensor_names = sorted(gpu_tensors[gpu_id])
                 
-                # Try to create efficient regex patterns for groups of similar tensors
-                patterns = self._generate_tensor_patterns(tensor_names)
+                # Collate patterns: if entire blocks are on a single device, shorten to a prefix
+                patterns = self._generate_collated_patterns(result, gpu_id, tensor_names)
                 
                 for pattern in patterns:
                     # Use pattern directly (already escaped by _generate_tensor_patterns)
@@ -507,7 +507,7 @@ class LlamaCppOutputFormatter:
         # Future optimization: group similar patterns
         patterns = []
         
-        for tensor_name in sorted(tensor_names):
+        for tensor_name in sorted(tensor_names, key=self._natural_sort_key):
             # Escape special regex characters and create exact match pattern
             escaped_name = self._escape_tensor_name(tensor_name)
             patterns.append(f"^{escaped_name}$")
@@ -524,6 +524,134 @@ class LlamaCppOutputFormatter:
             escaped = escaped.replace(char, f"\\{char}")
         
         return escaped
+
+    # -----------------------------
+    # Collation helpers
+    # -----------------------------
+    def _extract_block_id_from_name(self, name: str) -> Optional[int]:
+        """Extract block index, restricted to names that start with 'blk.<id>.' for collation."""
+        m = re.match(r'^blk\.(\d+)\.', name)
+        return int(m.group(1)) if m else None
+
+    def _common_block_prefix(self, names: List[str]) -> Optional[str]:
+        r"""Find a safe common prefix up to and including the block id and trailing dot.
+
+        We match '^(.*?\d+)\.' for each name and require that the captured prefix
+        is identical across all names. If so, return that prefix (with the trailing dot).
+        Otherwise, return None to indicate we shouldn't collapse to a prefix pattern.
+        """
+        prefixes: List[str] = []
+        for n in names:
+            mm = re.match(r'^(.*?\d+)\.', n)
+            if not mm:
+                return None
+            prefixes.append(mm.group(0))  # includes the trailing dot
+        # Ensure all prefixes are identical
+        if all(p == prefixes[0] for p in prefixes):
+            return prefixes[0]
+        return None
+
+    def _generate_collated_patterns(self, result: AllocationResult, gpu_id: int, tensor_names: List[str]) -> List[str]:
+        """Generate regex patterns for a GPU, collapsing full-block allocations to a prefix.
+
+        Rules:
+        - Only consider blocks with a numeric block id (ignore global tensors without an id).
+        - A block is collatable iff:
+          (a) All tensors with that block id in the allocation map are assigned to the same GPU, and
+          (b) There are no unallocated tensors from that block (i.e., the block is fully placed).
+        - The prefix pattern is derived as the common prefix up to '...<id>.' across all tensors
+          of that block on this GPU. If such a common prefix cannot be found, fall back to per-tensor patterns.
+        """
+        if not tensor_names:
+            return []
+
+        # Map tensor name -> block id for this GPU and globally
+        name_to_block: Dict[str, Optional[int]] = {n: self._extract_block_id_from_name(n) for n in result.tensor_gpu_mapping.keys()}
+
+        # Build block -> set of GPU ids that have tensors from that block
+        block_to_gpus: Dict[int, set] = {}
+        for n, gid in result.tensor_gpu_mapping.items():
+            bid = name_to_block.get(n)
+            if bid is None:
+                continue
+            block_to_gpus.setdefault(bid, set()).add(gid)
+
+        # Track blocks with any unallocated tensors
+        blocks_with_unalloc: set[int] = set()
+        for ut in result.unallocated_tensors:
+            if ut.block_id is not None:
+                blocks_with_unalloc.add(ut.block_id)
+
+        # Determine which blocks can be collapsed to a prefix on this GPU
+        collapsible_blocks: set[int] = set()
+        for bid, gids in block_to_gpus.items():
+            if bid in blocks_with_unalloc:
+                continue  # not fully placed
+            if len(gids) == 1 and next(iter(gids)) == gpu_id:
+                collapsible_blocks.add(bid)
+
+        # For this GPU, find the tensor names for each collapsible block and derive the common prefix
+        suppressed: set[str] = set()
+        patterns: List[str] = []
+
+        # Group tensor names by block for this GPU
+        tensors_by_block: Dict[int, List[str]] = {}
+        for n in tensor_names:
+            bid = self._extract_block_id_from_name(n)
+            if bid is None:
+                continue
+            tensors_by_block.setdefault(bid, []).append(n)
+
+        # Attempt to collapse each block
+        for bid in sorted(collapsible_blocks):
+            names_in_block = tensors_by_block.get(bid, [])
+            if not names_in_block:
+                continue
+            # For 'blk' blocks, we can confidently use the canonical prefix
+            prefix = f"blk.{bid}."
+            escaped_prefix = self._escape_tensor_name(prefix)
+            patterns.append(f'^{escaped_prefix}.*')
+            suppressed.update(names_in_block)
+
+        # For remaining tensors (not suppressed), emit exact-match patterns
+        remaining = [n for n in tensor_names if n not in suppressed]
+        patterns.extend(self._generate_tensor_patterns(remaining))
+
+        # Sort patterns for consistent output in natural numeric order
+        return sorted(patterns, key=self._natural_pattern_key)
+
+    # -----------------------------
+    # Sorting helpers (natural numeric order)
+    # -----------------------------
+    def _natural_sort_key(self, text: str):
+        """Return a list of string/int chunks for natural sort of plain names."""
+        parts = re.split(r'(\d+)', text)
+        key = []
+        for part in parts:
+            if part.isdigit():
+                key.append(int(part))
+            else:
+                key.append(part.lower())
+        return key
+
+    def _natural_pattern_key(self, pattern: str):
+        r"""Natural sort key for regex patterns like ^blk\.12\..*, ^name$.
+
+        We strip anchors (^, $), collapse escape sequences (\\. -> ., \\[ -> [, etc),
+        and remove trailing ".*" when present, then reuse the plain natural key.
+    """
+        # Remove anchors
+        s = pattern
+        if s.startswith('^'):
+            s = s[1:]
+        if s.endswith('$'):
+            s = s[:-1]
+        # Remove trailing ".*" used for prefixes
+        if s.endswith('.*'):
+            s = s[:-2]
+        # Unescape common escaped characters used in our patterns
+        s = s.replace('\\.', '.').replace('\\[', '[').replace('\\]', ']').replace('\\(', '(').replace('\\)', ')').replace('\\+', '+').replace('\\*', '*').replace('\\?', '?').replace('\\{', '{').replace('\\}', '}').replace('\\|', '|').replace('\\', '')
+        return self._natural_sort_key(s)
 
 
 # ============================================================================
@@ -673,7 +801,6 @@ class GGUFTensorOverrider:
             width = len(idx_str)
             # Use split_count from metadata when provided, otherwise fall back to parsed total
             total = split_count if split_count is not None else int(total_str)
-            base = path_str[: m.start(1) - 1]  # up to the hyphen before index
             # base currently ends before '-<idx>'? Let's reconstruct carefully:
             # Split path into prefix + pattern
             prefix = path_str[: m.start()]  # before '-<idx>-of-<total>.gguf'

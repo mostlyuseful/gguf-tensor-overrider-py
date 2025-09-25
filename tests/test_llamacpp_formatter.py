@@ -1,6 +1,4 @@
 """Tests for llama.cpp output formatter."""
-
-import pytest
 from gguf_tensor_overrider_py.core import LlamaCppOutputFormatter
 from gguf_tensor_overrider_py.models import AllocationResult, GPUCapacity
 
@@ -44,9 +42,10 @@ class TestLlamaCppOutputFormatter:
         
         # Verify llama.cpp flags are generated
         assert "# llama.cpp Tensor Override Flags" in output
-        assert '-ot "^blk\\.0\\.attn_k\\.weight$=CUDA0"' in output
-        assert '-ot "^blk\\.0\\.ffn_down\\.weight$=CUDA0"' in output
-        assert '-ot "^blk\\.1\\.attn_v\\.weight$=CUDA1"' in output
+        # Block 0 tensors should be collated to a single prefix
+        assert '-ot "^blk\\.0\\..*=CUDA0"' in output
+        # Block 1 has only one tensor in this test; collated prefix is acceptable
+        assert '-ot "^blk\\.1\\..*=CUDA1"' in output
         assert '-ot "^output\\.weight$=CUDA1"' in output
         
         # Verify summary is included as comments
@@ -108,10 +107,10 @@ class TestLlamaCppOutputFormatter:
         assert "CUDA1" in output
         assert "CUDA2" in output
         
-        # Verify tensor assignments
-        assert '-ot "^blk\\.0\\.attn\\.weight$=CUDA0"' in output
-        assert '-ot "^blk\\.1\\.attn\\.weight$=CUDA1"' in output
-        assert '-ot "^blk\\.2\\.attn\\.weight$=CUDA2"' in output
+        # Verify block-level collation
+        assert '-ot "^blk\\.0\\..*=CUDA0"' in output
+        assert '-ot "^blk\\.1\\..*=CUDA1"' in output
+        assert '-ot "^blk\\.2\\..*=CUDA2"' in output
     
     def test_escape_tensor_name(self):
         """Test tensor name escaping for regex safety."""
@@ -181,7 +180,8 @@ class TestLlamaCppOutputFormatter:
         assert '-ot "^model\\.layers\\.0\\.self_attn\\.q_proj\\.weight$=CUDA0"' in output
         assert '-ot "^transformer\\.h\\.0\\.attn\\.c_attn\\.weight$=CUDA0"' in output
         assert '-ot "^layers\\[0\\]\\.feed_forward\\.w1\\.weight$=CUDA1"' in output
-        assert '-ot "^blk\\.0\\.ffn_gate\\(bias\\)$=CUDA1"' in output
+        # blk.0 is collated to a prefix when all blk.0 tensors are on the same device
+        assert '-ot "^blk\\.0\\..*=CUDA1"' in output
     
     def test_format_allocation_sorted_output(self):
         """Test that output is consistently sorted."""
@@ -262,3 +262,33 @@ class TestLlamaCppOutputFormatter:
         # Generic should have tensor mappings
         assert "tensor1:gpu_0" in generic_output
         assert "tensor1:gpu_0" not in llama_output
+
+    def test_natural_numeric_sorting(self):
+        """Ensure -ot flags sort blocks numerically (1,2,19 rather than 1,19,2)."""
+        result = AllocationResult()
+        # Same GPU, different block numbers; include a global to ensure exact-match coexists
+        result.tensor_gpu_mapping = {
+            "blk.1.attn.weight": 0,
+            "blk.19.ffn.weight": 0,
+            "blk.2.attn.weight": 0,
+            "output.weight": 0,
+        }
+        # One GPU capacity is sufficient
+        result.gpu_allocations[0] = GPUCapacity(0, 8 * 1024**3, 90.0)
+        output = self.formatter.format_allocation(result)
+        # Collect -ot lines for CUDA0
+        lines = [line for line in output.splitlines() if line.startswith('-ot') and 'CUDA0' in line]
+        # Expected natural order: blk.1, blk.2, blk.19 prefixes then output.weight (exact)
+        # Because blocks are collated, we check for their order in lines list
+        expected_order_substrings = [
+            '^blk\\.1\\..*=CUDA0',
+            '^blk\\.2\\..*=CUDA0',
+            '^blk\\.19\\..*=CUDA0',
+        ]
+        # Extract only lines that contain a blk prefix for ordering check
+        blk_lines = [line for line in lines if 'blk' in line]
+        # Ensure at least 3 blk lines exist
+        assert len(blk_lines) >= 3
+        # Verify order
+        for i, sub in enumerate(expected_order_substrings):
+            assert sub in blk_lines[i]
