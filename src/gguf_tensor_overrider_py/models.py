@@ -326,7 +326,18 @@ class AllocationResult:
                 gpu_id: {
                     'allocated_bytes': gpu.allocated_bytes,
                     'kv_cache_bytes': gpu.kv_cache_reserved_bytes,
+                    # Utilization relative to usable VRAM (historical behavior)
                     'utilization_percent': gpu.utilization_percentage,
+                    # Additional context for clearer reporting
+                    'total_vram_bytes': gpu.total_vram_bytes,
+                    'usable_vram_bytes': gpu.usable_vram_bytes,
+                    'usable_percent_limit': gpu.usable_percentage,
+                    # Utilization relative to total VRAM (what users expect vs the max fill percent)
+                    'utilization_percent_of_total': (
+                        (gpu.allocated_bytes + gpu.kv_cache_reserved_bytes)
+                        / gpu.total_vram_bytes * 100.0
+                        if gpu.total_vram_bytes > 0 else 0.0
+                    ),
                     'allocated_blocks': sorted([b for b in gpu.allocated_blocks if b is not None]),
                     'tensor_count': len(gpu.allocated_tensors)
                 }

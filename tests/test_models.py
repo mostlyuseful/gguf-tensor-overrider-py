@@ -465,8 +465,27 @@ class TestAllocationResult:
         assert gpu_info['allocated_bytes'] == 1 * 1024**3
         assert gpu_info['kv_cache_bytes'] == 1 * 1024**3
         assert gpu_info['utilization_percent'] == pytest.approx(62.5)  # 2GB used / 3.2GB usable
+        # New fields
+        assert gpu_info['total_vram_bytes'] == 4 * 1024**3
+        assert gpu_info['usable_vram_bytes'] == int(4 * 1024**3 * 0.8)
+        assert gpu_info['usable_percent_limit'] == 80.0
+        assert gpu_info['utilization_percent_of_total'] == pytest.approx(50.0)  # 2GB used / 4GB total
         assert gpu_info['allocated_blocks'] == [0, 1]  # None filtered out
         assert gpu_info['tensor_count'] == 2
+
+    def test_utilization_respects_total_limit(self):
+        """Ensure utilization relative to total VRAM does not exceed configured limit."""
+        result = AllocationResult()
+        # 24 GB total, 90% usable
+        gpu = GPUCapacity(gpu_id=3, total_vram_bytes=24 * 1024**3, usable_percentage=90.0)
+        # Simulate 14.8 GB tensors + 5.08 GB KV = 19.88 GB used
+        gpu.allocated_bytes = int(14.8 * 1024**3)
+        gpu.kv_cache_reserved_bytes = int(5.08 * 1024**3)
+        result.gpu_allocations[3] = gpu
+        summary = result.allocation_summary
+        gpu_info = summary['gpu_utilization'][3]
+        # Percent of total should be below or equal to the configured usable limit
+        assert gpu_info['utilization_percent_of_total'] <= gpu_info['usable_percent_limit']
 
 
 class TestGPUConfiguration:

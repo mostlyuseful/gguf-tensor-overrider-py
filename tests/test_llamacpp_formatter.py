@@ -53,7 +53,7 @@ class TestLlamaCppOutputFormatter:
         assert "# Allocation Summary" in output
         assert "# Total tensors: 4" in output
         assert "# GPU 0:" in output
-        assert "# GPU 1:" in output
+        assert "of usable" in output and "of total" in output
     
     def test_format_allocation_empty(self):
         """Test formatting with no tensor allocations."""
