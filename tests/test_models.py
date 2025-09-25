@@ -507,7 +507,14 @@ class TestArchitectureKeys:
         expected_layers = ["llama.block_count", "llama.n_layer", "llama.layer_count"]
         expected_heads = ["llama.attention.head_count", "llama.n_head"]
         expected_kv_heads = ["llama.attention.head_count_kv", "llama.n_kv_head", "llama.rope.n_kv_head"]
-        expected_head_dim = ["llama.attention.head_dim", "llama.head_dim"]
+        expected_head_dim = [
+            "llama.attention.head_dim",
+            "llama.head_dim",
+            "llama.attention.value_length",
+            "llama.attention.key_length",
+            "llama.attention.value_length_mla",
+            "llama.attention.key_length_mla",
+        ]
         
         assert keys.embedding_keys == expected_embedding
         assert keys.layer_count_keys == expected_layers

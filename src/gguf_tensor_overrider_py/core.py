@@ -44,11 +44,6 @@ class OutputFormatterProtocol(Protocol):
 class MetadataExtractor:
     """Extracts and validates model metadata from GGUF files."""
     
-    def __init__(self):
-        self.supported_architectures = {
-            'llama', 'qwen', 'qwen2', 'qwen2_moe', 'qwen3', 'qwen3moe', 'gemma3', 'deepseek2'
-        }
-    
     def extract_metadata(self, gguf_parser: GGUFParser) -> ModelMetadata:
         """Extract model metadata from parsed GGUF file."""
         metadata = gguf_parser.metadata
@@ -83,14 +78,16 @@ class MetadataExtractor:
     def _get_architecture(self, metadata: Dict[str, Any]) -> str:
         """Extract and validate architecture from metadata."""
         arch = metadata.get('general.architecture', '').lower()
-        
-        # Check for prefix matches but return the full architecture name
-        for supported in self.supported_architectures:
-            if arch.startswith(supported):
-                return arch
-        
-        raise ValueError(f"Unsupported architecture: {arch}. "
-                        f"Supported: {', '.join(self.supported_architectures)}")
+        # Validate against a permissive allow-list of known families to provide
+        # a clearer error than missing key fallbacks when architecture is unknown.
+        supported_prefixes = {
+            'llama', 'mistral', 'mixtral', 'qwen', 'qwen2', 'phi', 'gemma',
+            'glm', 'glm4', 'glm4moe', 'baichuan', 'falcon', 'mpt', 'olmo', 'cohere',
+            'deepseek', 'deepseek2'
+        }
+        if not any(arch.startswith(p) for p in supported_prefixes):
+            raise ValueError(f"Unsupported architecture: {arch}")
+        return arch
     
     def _find_metadata_value(self, metadata: Dict[str, Any], keys: List[str], required: bool = True) -> Optional[int]:
         """Find first available value from list of possible keys."""
@@ -304,6 +301,9 @@ class TensorAllocator:
         
         result = AllocationResult()
         
+        # Set KV config and metadata for CPU calculations
+        result.set_kv_config(kv_config, metadata)
+        
         # Initialize GPU capacities
         for config in gpu_configs:
             gpu_capacity = config.to_gpu_capacity()
@@ -390,6 +390,18 @@ class GenericOutputFormatter:
             if gpu_info['allocated_blocks']:
                 blocks_str = ", ".join(map(str, gpu_info['allocated_blocks']))
                 lines.append(f"  Blocks: {blocks_str}")
+
+        # Total offload to CPU RAM (unallocated tensors + CPU KV cache)
+        if result.unallocated_tensors or result.cpu_kv_cache_bytes > 0:
+            unalloc_bytes = sum(t.size_bytes for t in result.unallocated_tensors)
+            unalloc_gb = unalloc_bytes / (1024**3)
+            cpu_kv_gb = result.cpu_kv_cache_bytes / (1024**3)
+            total_cpu_gb = result.total_cpu_bytes / (1024**3)
+            
+            lines.append(f"CPU offload (unallocated tensors): {unalloc_gb:.1f}GB")
+            if result.cpu_kv_cache_bytes > 0:
+                lines.append(f"CPU KV cache (unallocated layers): {cpu_kv_gb:.1f}GB")
+            lines.append(f"Total CPU memory required: {total_cpu_gb:.1f}GB")
         
         # Warnings
         if summary['warnings']:
@@ -456,6 +468,20 @@ class LlamaCppOutputFormatter:
             if gpu_info['allocated_blocks']:
                 blocks_str = ", ".join(map(str, gpu_info['allocated_blocks']))
                 lines.append(f"#   Blocks: {blocks_str}")
+
+        # Total offload to CPU RAM (unallocated tensors + CPU KV cache)
+        if result.unallocated_tensors:
+            unalloc_bytes = sum(t.size_bytes for t in result.unallocated_tensors)
+        else:
+            unalloc_bytes = 0
+        unalloc_gb = unalloc_bytes / (1024**3)
+        cpu_kv_gb = result.cpu_kv_cache_bytes / (1024**3)
+        total_cpu_gb = result.total_cpu_bytes / (1024**3)
+        
+        lines.append(f"# CPU offload (unallocated tensors): {unalloc_gb:.1f}GB")
+        if result.cpu_kv_cache_bytes > 0:
+            lines.append(f"# CPU KV cache (unallocated layers): {cpu_kv_gb:.1f}GB")
+        lines.append(f"# Total CPU memory required: {total_cpu_gb:.1f}GB")
         
         # Add warnings as comments
         if summary['warnings']:

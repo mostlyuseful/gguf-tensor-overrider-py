@@ -162,13 +162,24 @@ class KVCacheConfig:
     v_dtype: DataType
     
     def bytes_per_layer(self, metadata: ModelMetadata) -> int:
-        """Calculate KV cache bytes per layer."""
+        """Calculate KV cache bytes per layer.
+
+        Note: For MoE architectures (e.g., glm4moe), expert counts apply to
+        feed-forward networks, not attention. KV cache stores K/V tensors for
+        attention heads only and therefore is computed from attention-related
+        dimensions (n_kv_heads and head_dim) regardless of expert_count.
+        """
         if metadata.head_dim is None:
             raise ValueError("Head dimension not available for KV cache calculation")
-        return (self.context_length * 
-                metadata.n_kv_heads * 
-                metadata.head_dim * 
-                (self.k_dtype.bytes_per_element + self.v_dtype.bytes_per_element))
+        bytes_per_token = (self.k_dtype.bytes_per_element + self.v_dtype.bytes_per_element)
+        total = (
+            self.context_length
+            * metadata.n_kv_heads
+            * metadata.head_dim
+            * bytes_per_token
+        )
+        # Ensure integer bytes; round to nearest for fractional byte estimates (e.g., Q5_0)
+        return int(round(total))
     
     def total_bytes(self, metadata: ModelMetadata) -> int:
         """Calculate total KV cache bytes for entire model."""
@@ -210,6 +221,8 @@ class AllocationResult:
     tensor_gpu_mapping: Dict[str, int] = field(default_factory=dict)
     unallocated_tensors: List[TensorInfo] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    _kv_config: Optional[KVCacheConfig] = field(default=None, init=False)
+    _metadata: Optional[ModelMetadata] = field(default=None, init=False)
     
     def allocate_tensor_to_gpu(self, tensor: TensorInfo, gpu_id: int) -> None:
         """Allocate a tensor to specific GPU and update mappings."""
@@ -224,6 +237,11 @@ class AllocationResult:
         """Add a warning message to the result."""
         self.warnings.append(message)
     
+    def set_kv_config(self, kv_config: KVCacheConfig, metadata: ModelMetadata) -> None:
+        """Set KV cache config and metadata for CPU calculations."""
+        self._kv_config = kv_config
+        self._metadata = metadata
+    
     @property
     def total_allocated_bytes(self) -> int:
         """Total bytes allocated across all GPUs."""
@@ -233,6 +251,31 @@ class AllocationResult:
     def total_kv_cache_bytes(self) -> int:
         """Total KV cache bytes reserved across all GPUs."""
         return sum(gpu.kv_cache_reserved_bytes for gpu in self.gpu_allocations.values())
+    
+    @property
+    def cpu_kv_cache_bytes(self) -> int:
+        """Calculate KV cache bytes that should be reserved on CPU for unallocated layers."""
+        if not self._kv_config or not self._metadata or not self.unallocated_tensors:
+            return 0
+        
+        # Find which layers have unallocated tensors
+        unallocated_layers = set()
+        for tensor in self.unallocated_tensors:
+            if tensor.block_id is not None:  # Only count numbered layers, not global tensors
+                unallocated_layers.add(tensor.block_id)
+        
+        # Calculate KV cache for unallocated layers
+        if unallocated_layers:
+            bytes_per_layer = self._kv_config.bytes_per_layer(self._metadata)
+            return len(unallocated_layers) * bytes_per_layer
+        
+        return 0
+    
+    @property
+    def total_cpu_bytes(self) -> int:
+        """Total CPU memory required (unallocated tensors + CPU KV cache)."""
+        unallocated_tensor_bytes = sum(t.size_bytes for t in self.unallocated_tensors)
+        return unallocated_tensor_bytes + self.cpu_kv_cache_bytes
     
     @property
     def allocation_summary(self) -> Dict[str, Any]:
@@ -289,5 +332,15 @@ class ArchitectureKeys:
             layer_count_keys=[f"{arch}.block_count", f"{arch}.n_layer", f"{arch}.layer_count"],
             n_heads_keys=[f"{arch}.attention.head_count", f"{arch}.n_head"],
             n_kv_heads_keys=[f"{arch}.attention.head_count_kv", f"{arch}.n_kv_head", f"{arch}.rope.n_kv_head"],
-            head_dim_keys=[f"{arch}.attention.head_dim", f"{arch}.head_dim"]
+            # Many architectures expose head dimension using different names; include common aliases
+            head_dim_keys=[
+                f"{arch}.attention.head_dim",
+                f"{arch}.head_dim",
+                # Prefer value length when K/V differ, then key length
+                f"{arch}.attention.value_length",
+                f"{arch}.attention.key_length",
+                # DeepSeek 2 MLA variants: prefer value then key
+                f"{arch}.attention.value_length_mla",
+                f"{arch}.attention.key_length_mla",
+            ]
         )
