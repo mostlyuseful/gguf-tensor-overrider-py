@@ -6,8 +6,8 @@ from typing import Optional
 import typer
 from typing_extensions import Annotated
 
-from .core import AllocationRequest, GGUFTensorOverrider
-from .models import DataType
+from gguf_tensor_overrider_py.core import AllocationRequest, GGUFTensorOverrider
+from gguf_tensor_overrider_py.models import DataType
 
 app = typer.Typer(
     name="gguf-tensor-overrider-py",
