@@ -1,8 +1,8 @@
 """GGUF Tensor Overrider - Generate GPU allocation plans for GGUF models."""
 
-from .cli import app
-from .core import GGUFTensorOverrider, AllocationRequest, GenericOutputFormatter, LlamaCppOutputFormatter
-from .models import (
+from gguf_tensor_overrider_py.cli import app
+from gguf_tensor_overrider_py.core import GGUFTensorOverrider, AllocationRequest, GenericOutputFormatter, LlamaCppOutputFormatter
+from gguf_tensor_overrider_py.models import (
     DataType, TensorPriority, TensorInfo, GPUCapacity, ModelMetadata,
     KVCacheConfig, BlockGroup, AllocationResult, GPUConfiguration
 )

@@ -3,7 +3,7 @@ from pathlib import Path
 import struct
 
 from gguf_parser import GGUFParser, GGUFParseError
-from .httpfile import HttpFile
+from gguf_tensor_overrider_py.httpfile import HttpFile
 
 
 class HttpGGUFParser(GGUFParser):

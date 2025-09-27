@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, patch
 
 from gguf_tensor_overrider_py.core import (
-    MetadataExtractor, TensorProcessor, GPUManager, TensorAllocator,
+    LinearTensorAllocator, MetadataExtractor, TensorProcessor, GPUManager, TensorAllocator,
     GenericOutputFormatter, GGUFTensorOverrider, AllocationRequest
 )
 from gguf_tensor_overrider_py.models import (
@@ -267,7 +267,7 @@ class TestTensorAllocator:
     
     def setup_method(self):
         """Set up test fixtures."""
-        self.allocator = TensorAllocator()
+        self.allocator = LinearTensorAllocator()
     
     def test_allocate_tensors_simple(self):
         """Test simple tensor allocation."""
