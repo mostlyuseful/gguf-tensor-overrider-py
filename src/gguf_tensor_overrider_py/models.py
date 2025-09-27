@@ -142,6 +142,11 @@ class GPUCapacity:
     def can_fit_tensor(self, size_bytes: int) -> bool:
         """Check if tensor of given size can fit in available space."""
         return self.available_bytes >= size_bytes
+    
+    def can_fit_tensor_group(self, sizes_bytes: List[int]) -> bool:
+        """Check if a group of tensors can fit in available space."""
+        total_size = sum(sizes_bytes)
+        return self.available_bytes >= total_size
 
     def can_fit_block(self, block_tensors: List[TensorInfo]) -> bool:
         """Check if entire block can fit in available space."""
@@ -299,6 +304,23 @@ class AllocationResult:
         gpu = self.gpu_allocations[gpu_id]
         gpu.allocate_tensor(tensor)
         self.tensor_gpu_mapping[tensor.name] = gpu_id
+
+    def allocate_tensor_group_to_gpu(self, tensor_group: List[TensorInfo], gpu_id: int) -> None:
+        """Allocate a group of tensors to specific GPU and update mappings."""
+        if gpu_id not in self.gpu_allocations:
+            raise ValueError(f"GPU {gpu_id} not found in available GPUs")
+
+        gpu = self.gpu_allocations[gpu_id]
+        tensor_sizes = [tensor.size_bytes for tensor in tensor_group]
+        if not gpu.can_fit_tensor_group(tensor_sizes):
+            raise ValueError(
+                f"Cannot fit tensor group of size {sum(tensor_sizes)} bytes "
+                f"in GPU {gpu_id} (available: {gpu.available_bytes} bytes)"
+            )
+
+        for tensor in tensor_group:
+            gpu.allocate_tensor(tensor)
+            self.tensor_gpu_mapping[tensor.name] = gpu_id
 
     def add_warning(self, message: str) -> None:
         """Add a warning message to the result."""

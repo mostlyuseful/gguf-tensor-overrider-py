@@ -45,7 +45,7 @@ class TestRealGGUFIntegration:
             verbose=True,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify successful allocation
         assert "# Tensor Allocations" in output
@@ -76,7 +76,7 @@ class TestRealGGUFIntegration:
             verbose=False,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify partial allocation
         assert "# Allocation Summary" in output
@@ -110,7 +110,7 @@ class TestRealGGUFIntegration:
             verbose=False,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify successful allocation
         assert "# Allocation Summary" in output
@@ -149,7 +149,7 @@ class TestRealGGUFIntegration:
             verbose=False,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify partial allocation
         assert "# Allocation Summary" in output
@@ -182,7 +182,7 @@ class TestRealGGUFIntegration:
             verbose=False,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify allocation across both GPUs
         assert "# Allocation Summary" in output
@@ -234,7 +234,7 @@ class TestRealGGUFIntegration:
             verbose=False,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify successful allocation regardless of KV cache settings
         assert "# Allocation Summary" in output
@@ -277,7 +277,7 @@ class TestRealGGUFIntegration:
                 verbose=False,
             )
 
-            output = overrider.process_allocation_request(request)
+            _, output = overrider.process_allocation_request(request)
 
             # Extract KV cache usage
             lines = output.split("\n")
@@ -309,7 +309,7 @@ class TestRealGGUFIntegration:
             verbose=True,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Look for block allocation information in verbose output
         lines = output.split("\n")
@@ -353,7 +353,7 @@ class TestRealGGUFIntegration:
         # Run allocation multiple times
         outputs = []
         for _ in range(3):
-            output = overrider.process_allocation_request(request)
+            _, output = overrider.process_allocation_request(request)
             outputs.append(output)
 
         # All outputs should be identical (deterministic allocation)
@@ -432,7 +432,7 @@ class TestErrorHandling:
             verbose=False,
         )
 
-        output = overrider.process_allocation_request(request)
+        _, output = overrider.process_allocation_request(request)
 
         # Verify successful allocation
         assert "# Allocation Summary" in output

@@ -481,8 +481,24 @@ class PriorityTensorAllocator(TensorAllocator):
 
         # Sort by priority (lower enum value = higher priority), then larger tensors first, then name for determinism
         flat_tensors.sort(key=lambda t: (t.priority.value, -t.size_bytes, t.name))
+        # Group tensors that ABSOLUTELY should stay together, e.g. attention tensors
+        tensor_groups = collect_tensors_in_groups(flat_tensors)
+        flat_tensors = []
 
-        # Greedy allocation: for each tensor pick the GPU with most remaining space that fits
+        # Allocate groups in round-robin order to GPUs that can fit them
+        for group in tensor_groups:
+            # Find a GPU that can fit the entire group
+            candidates = [
+                g for g in result.gpu_allocations.values()
+                if g.can_fit_block(group)
+            ]
+            if not candidates:
+                flat_tensors.extend(group)
+            else:
+                target = candidates[0]
+                result.allocate_tensor_group_to_gpu(group, target.gpu_id)
+
+        # Greedy allocation: for each remaining tensor pick the GPU with most remaining space that fits
         for tensor in flat_tensors:
             candidates = [
                 g
@@ -590,6 +606,93 @@ class PriorityTensorAllocator(TensorAllocator):
             )
 
         return result
+
+
+# New helper (used above)
+def collect_tensors_in_groups(tensors: List["TensorInfo"]) -> List[List["TensorInfo"]]:
+    """
+    Group tensors that should be allocated together.
+
+    Current heuristic:
+    - For each block (tensor.block_id not None), gather attention projection tensors
+      (Q/K/V/O or common variants) if at least two appear.
+    - Only those sets are grouped; everything else becomes a single-tensor group.
+    - Ordering of groups matches first occurrence ordering in the input list.
+
+    This is intentionally conservative so we do not over-constrain allocation.
+    """
+    if not tensors:
+        return []
+
+    # Tokens indicating attention projection weights across model families.
+    # We match as substrings AFTER the 'blk.<id>.' prefix.
+    attention_tokens = {
+        "attn_q", "attn_k", "attn_v", "attn_o",
+        "attention.wq", "attention.wk", "attention.wv", "attention.wo",
+        "attention.q_proj", "attention.k_proj", "attention.v_proj", "attention.o_proj",
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "wq", "wk", "wv", "wo",
+    }
+
+    # (block_id, group_key) -> list[TensorInfo]
+    grouped: Dict[tuple[int, str], List["TensorInfo"]] = {}
+    # Track first index where each group appears for stable ordering
+    group_first_index: Dict[tuple[int, str], int] = {}
+
+    for idx, t in enumerate(tensors):
+        bid = getattr(t, "block_id", None)
+        if bid is None:
+            continue
+        name_l = t.name.lower()
+
+        # We only attempt matching inside block-qualified names like 'blk.<id>.'
+        # (Not strictly required, but avoids accidental grouping of global tensors).
+        # If the tensor name already has block_id property it should have that pattern,
+        # but we still guard.
+        if f"blk.{bid}." not in name_l:
+            continue
+
+        # Extract the suffix after the block prefix for token matching
+        # (fallback to full name if split fails).
+        try:
+            suffix = name_l.split(f"blk.{bid}.", 1)[1]
+        except Exception:
+            suffix = name_l
+
+        if any(tok in suffix for tok in attention_tokens):
+            key = (bid, "attention")
+            if key not in grouped:
+                grouped[key] = []
+                group_first_index[key] = idx
+            grouped[key].append(t)
+
+    # Only keep groups with >= 2 tensors (otherwise no benefit)
+    valid_groups = {k: v for k, v in grouped.items() if len(v) >= 2}
+
+    # Build a name lookup for fast membership test
+    grouped_names = {t.name for group in valid_groups.values() for t in group}
+
+    # Prepare output preserving order: when we hit the first tensor of a group, emit entire group
+    emitted_groups: set[tuple[int, str]] = set()
+    result: List[List["TensorInfo"]] = []
+
+    for t in tensors:
+        if t.name in grouped_names:
+            # Identify group key
+            bid = getattr(t, "block_id", None)
+            key = (bid, "attention")  # only group key we use right now
+            if key in valid_groups and key not in emitted_groups:
+                # Sort group deterministically (by name) to avoid random ordering
+                group_list = sorted(valid_groups[key], key=lambda x: x.name)
+                result.append(group_list)
+                emitted_groups.add(key)
+            # Else already emitted; skip adding individually
+            continue
+        else:
+            # Not part of any multi-tensor group
+            result.append([t])
+
+    return result
 
 
 # ============================================================================
