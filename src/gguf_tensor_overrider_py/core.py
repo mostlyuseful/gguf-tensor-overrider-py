@@ -713,7 +713,7 @@ class LlamaCppOutputFormatter:
 
                 for pattern in patterns:
                     # Use pattern directly (already escaped by _generate_tensor_patterns)
-                    override_flags.append(f'-ot "{pattern}={device_name}"')
+                    override_flags.append(f'-ot "{pattern}={device_name}" \\')
 
             # Add flags to output
             for flag in override_flags:
