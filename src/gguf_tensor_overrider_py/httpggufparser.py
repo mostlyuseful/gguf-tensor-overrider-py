@@ -8,31 +8,31 @@ from gguf_tensor_overrider_py.httpfile import HttpFile
 
 class HttpGGUFParser(GGUFParser):
     """A GGUF parser that supports both local files and HTTP(S) URLs."""
-    
+
     def __init__(self, file_path_or_url):
         """Initialize the parser with the given GGUF file path or URL."""
         super().__init__(file_path_or_url)
         self.file_path_or_url = file_path_or_url
-    
+
     def parse(self):
         """Parse the GGUF file from either a local path or HTTP(S) URL."""
         # Determine if we're dealing with a URL or local file
         parsed = urlparse(str(self.file_path_or_url))
-        is_url = parsed.scheme in ('http', 'https')
-        
+        is_url = parsed.scheme in ("http", "https")
+
         if is_url:
             # Use HttpFile for URLs
-            with HttpFile(str(self.file_path_or_url), block_size=5*1024**2) as f:
+            with HttpFile(str(self.file_path_or_url), block_size=5 * 1024**2) as f:
                 self._parse_from_file_object(f)
         else:
             # Use regular file for local paths
             file_path = Path(self.file_path_or_url)
             if not file_path.exists():
                 raise GGUFParseError(f"GGUF file not found: {file_path}")
-            
+
             with open(file_path, "rb") as f:
                 self._parse_from_file_object(f)
-    
+
     def _parse_from_file_object(self, f):
         """Parse GGUF from a file-like object (adapted from original GGUFParser.parse)."""
         # Read the magic number
@@ -63,7 +63,7 @@ class HttpGGUFParser(GGUFParser):
         for _ in range(tensor_count):
             tensor_info = self._read_tensor_info(f)
             self.tensors_info.append(tensor_info)
-    
+
     def _read_string(self, f):
         """Read a string from the file."""
         length = struct.unpack("Q", f.read(8))[0]
