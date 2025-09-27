@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from pathlib import Path
+import sys
 from typing import Any, Dict, List, Optional, Protocol, Union
 from urllib.parse import urlparse
 
@@ -958,7 +959,11 @@ class GGUFTensorOverrider:
         try:
             # Parse GGUF file
             if request.verbose:
-                print(f"Loading GGUF file: {request.gguf_path}")
+                print(
+                    f"Loading GGUF file: {request.gguf_path}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
             gguf_parser = self._load_gguf_file(request.gguf_path)
 
@@ -974,18 +979,24 @@ class GGUFTensorOverrider:
             if split_count > 1:
                 if request.verbose:
                     print(
-                        f"Detected split GGUF with split.count={split_count}. Discovering and parsing all parts..."
+                        f"Detected split GGUF with split.count={split_count}. Discovering and parsing all parts...",
+                        file=sys.stderr,
+                        flush=True,
                     )
                 part_paths = self._discover_split_parts(
                     str(request.gguf_path), split_count
                 )
                 if request.verbose:
-                    print(f"Found {len(part_paths)} parts")
+                    print(f"Found {len(part_paths)} parts", file=sys.stderr, flush=True)
                 combined_tensors: List[Dict[str, Any]] = []
                 seen_names: set[str] = set()
                 for idx, part_path in enumerate(part_paths):
                     if request.verbose:
-                        print(f"Parsing part {idx+1}/{len(part_paths)}: {part_path}")
+                        print(
+                            f"Parsing part {idx+1}/{len(part_paths)}: {part_path}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
                     part_parser = HttpGGUFParser(part_path)
                     part_parser.parse()
                     # Optional: verify consistent split.count
@@ -1007,7 +1018,7 @@ class GGUFTensorOverrider:
 
             # Extract metadata
             if request.verbose:
-                print("Extracting model metadata...")
+                print("Extracting model metadata...", file=sys.stderr, flush=True)
 
             metadata: ModelMetadata = self.metadata_extractor.extract_metadata(
                 gguf_parser
@@ -1015,13 +1026,17 @@ class GGUFTensorOverrider:
 
             # Process tensors
             if request.verbose:
-                print("Processing tensors and grouping by blocks...")
+                print(
+                    "Processing tensors and grouping by blocks...",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
             block_groups = self.tensor_processor.process_tensors(gguf_parser)
 
             # Get GPU configurations
             if request.verbose:
-                print("Configuring GPUs...")
+                print("Configuring GPUs...", file=sys.stderr, flush=True)
             gpu_configs = self.gpu_manager.get_gpu_configurations(
                 use_system_gpus=request.use_system_gpus,
                 gpu_vram_config=request.gpu_vram_config,
@@ -1037,7 +1052,7 @@ class GGUFTensorOverrider:
 
             # Perform allocation
             if request.verbose:
-                print("Allocating tensors to GPUs...")
+                print("Allocating tensors to GPUs...", file=sys.stderr, flush=True)
 
             result = self.allocator.allocate_tensors(
                 block_groups, gpu_configs, kv_config, metadata
