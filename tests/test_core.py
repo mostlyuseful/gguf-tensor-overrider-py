@@ -8,7 +8,6 @@ from gguf_tensor_overrider_py.core import (
     MetadataExtractor,
     TensorProcessor,
     GPUManager,
-    TensorAllocator,
     GenericOutputFormatter,
     GGUFTensorOverrider,
     AllocationRequest,
@@ -411,7 +410,7 @@ class TestGGUFTensorOverrider:
             v_dtype=DataType.F16,
         )
 
-        output = self.overrider.process_allocation_request(request)
+        _,output = self.overrider.process_allocation_request(request)
 
         assert "# Allocation Summary" in output
         assert isinstance(output, str)
@@ -468,7 +467,7 @@ class TestGGUFTensorOverrider:
             verbose=False,
         )
 
-        output = self.overrider.process_allocation_request(request)
+        _, output = self.overrider.process_allocation_request(request)
 
         # Ensure tensors from both parts are considered (3+ tensors)
         assert "# Allocation Summary" in output

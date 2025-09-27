@@ -948,10 +948,12 @@ class GGUFTensorOverrider:
         self.metadata_extractor = metadata_extractor or MetadataExtractor()
         self.tensor_processor = tensor_processor or TensorProcessor()
         self.gpu_manager = gpu_manager or GPUManager()
-        self.allocator = allocator or LinearTensorAllocator()
+        self.allocator = allocator or PriorityTensorAllocator()
         self.output_formatter = output_formatter or LlamaCppOutputFormatter()
 
-    def process_allocation_request(self, request: AllocationRequest) -> str:
+    def process_allocation_request(
+        self, request: AllocationRequest
+    ) -> tuple[AllocationResult, str]:
         """Process complete allocation request and return formatted output."""
         try:
             # Parse GGUF file
@@ -1042,7 +1044,7 @@ class GGUFTensorOverrider:
             )
 
             # Format output
-            return self.output_formatter.format_allocation(result)
+            return result, self.output_formatter.format_allocation(result)
 
         except Exception as e:
             if request.verbose:
