@@ -105,7 +105,9 @@ def generate_report(placements, filepath: str) -> None:
             table_rows = []
             for p in placements:
                 name = _extract(p, ("name", "tensor_name", "key", "id")) or "?"
-                device = _extract(p, ("device", "gpu", "device_index", "gpu_index", "placement")) 
+                device = _extract(
+                    p, ("device", "gpu", "device_index", "gpu_index", "placement")
+                )
                 size_bytes = _extract(p, ("nbytes", "size_bytes", "bytes", "size"))
                 # Normalize device
                 if isinstance(device, (tuple, list)) and len(device) == 1:
@@ -147,7 +149,9 @@ def generate_report(placements, filepath: str) -> None:
     except Exception as e:
         # Best-effort fallback
         try:
-            Path(filepath).write_text(f"# Tensor Allocation Report\nError: {e}\n", encoding="utf-8")
+            Path(filepath).write_text(
+                f"# Tensor Allocation Report\nError: {e}\n", encoding="utf-8"
+            )
         except Exception:
             pass
 

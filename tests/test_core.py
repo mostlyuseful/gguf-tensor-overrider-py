@@ -410,7 +410,7 @@ class TestGGUFTensorOverrider:
             v_dtype=DataType.F16,
         )
 
-        _,output = self.overrider.process_allocation_request(request)
+        _, output = self.overrider.process_allocation_request(request)
 
         assert "# Allocation Summary" in output
         assert isinstance(output, str)
